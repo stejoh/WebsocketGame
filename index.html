@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<title>Socket Controller Game</title>
+
+  	<script src="/socket.io/socket.io.js"></script>
+	<script src="//davidshimjs.github.com/qrcodejs/qrcode.min.js"></script>
+	<script src="//threejs.org/build/three.min.js"></script>
+	
+	<style>
+		body {
+		  margin: 0;
+
+		}
+		#controller_qr {
+		  position: absolute;
+		  top: 0;
+		  padding: 20px;
+		  background: white;
+		}
+		#touch_layer{
+			position: absolute;
+			top: 0;
+			right: 0;
+			bottom: 0;
+			left: 0;
+		}
+	</style>
+</head>
+
+<body>
+
+	<script>
+		var io = io.connect();
+
+		if (window.location.href.indexOf('?id=') > 0) {
+
+		  io.emit('controller_connect', window.location.href.split('?id=')[1]);
+
+	  		var touchLayer = document.createElement('div');
+
+			touchLayer.id = "touch_layer";
+				document.body.appendChild(touchLayer);
+
+		} else {
+
+	  		io.on('connect', function() {
+			  	io.emit('game_connect');
+
+			  	var qr = document.createElement('div');
+
+				qr.id = "controller_qr";
+
+				document.body.appendChild(qr);
+
+				io.on('controller_connected', function(connected){
+
+				  if (connected) {
+				    qr.style.display = "none";
+
+					
+
+				  }else{
+				    qr.style.display = "block";
+				  }
+
+				});			
+			});
+
+			var game_connected = function() {
+			  	var url = "http://192.168.1.2:8181?id=" + io.id;
+			  	var qr_code = new QRCode("controller_qr");
+				qr_code.makeCode(url);
+			  	io.removeListener('game_connected', game_connected);
+			};
+
+			io.on('game_connected', game_connected);
+
+			var renderer = new THREE.WebGLRenderer({
+			  antialias: true
+			}),
+			scene = new THREE.Scene(),
+			camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 10000),
+
+			// Lights
+			ambient_light 		= new THREE.AmbientLight(0x222222),
+			directional_light = new THREE.DirectionalLight(0xffffff, 1),
+
+			// Used to load JSON models
+			loader = new THREE.JSONLoader(),
+
+			// Floor mesh
+			floor = new THREE.Mesh(new THREE.PlaneBufferGeometry(300,300), new THREE.MeshLambertMaterial({color: 0x22FF11})),
+
+			// Render loop
+			render = function(){
+
+		  	// Render using scene and camera
+		  	renderer.render(scene, camera);
+
+			  if (car) {
+
+				  // Rotate car
+				  if (controller_state.steer) {
+
+				    // Gives a number ranging from 0 to 1
+				    var percentage_speed = (speed / 2);
+
+				    // Rotate the car using the steer value
+				    // Multiplying it by the percentage speed makes the car not turn
+				    // unless accelerating and turns quicker as the speed increases.
+				    car.rotateY(controller_state.steer * percentage_speed);
+				  }
+
+				  // If controller is accelerating
+				  if (controller_state.accelerate) {
+
+				    // Add to speed until it is 2
+				    if (speed < 2) {
+				      speed += 0.05;
+				    } else {
+				      speed = 2;
+				    }
+
+				  // If controller is not accelerating
+				  } else {
+
+				    // Subtract from speed until 0
+				    if (0 < speed) {
+				      speed -= 0.05;
+				    } else {
+				      speed = 0;
+				    }
+				  }
+
+				  // Move car "forward" at speed
+				  car.translateZ(speed);
+
+				  // Collisions
+				  if (car.position.x > 150) {
+				    car.position.x = 150;
+				  }
+				  if (car.position.x < -150) {
+				    car.position.x = -150;
+				  }
+				  if (car.position.z > 150) {
+				    car.position.z = 150;
+				  }
+				  if (car.position.z < -150) {
+				    car.position.z = -150;
+				  }
+				}
+
+			  // Call self
+			  requestAnimationFrame(render);
+			},
+			car;
+			var speed = 0,
+			controller_state = {};
+			
+			// Enable shadows
+			renderer.shadowMapEnabled = true;
+
+			// Moves the camera "backward" (z) and "up" (y)
+			camera.position.z = -300;
+			camera.position.y = 100;
+
+			// Points the camera at the center of the floor
+			camera.lookAt(floor.position);
+
+			// Moves the directional light
+			directional_light.position.y = 150; // "up" / "down"
+			directional_light.position.x = -100; // "left" / "right"
+			directional_light.position.z = 60; // "forward" / "backward"
+
+			// Make the light able to cast shadows
+			directional_light.castShadow = true;
+
+			// Rotates the floor 90 degrees, so that it is horizontal
+			floor.rotation.x = -90 * (Math.PI / 180)
+
+			// Make the floor able to recieve shadows
+			floor.receiveShadow = true;
+
+			// Add camera, lights and floor to the scene
+			scene.add(camera);
+			scene.add(ambient_light);
+			scene.add(directional_light);
+			scene.add(floor);
+
+			// Load the car model
+			loader.load(
+			  'public/car.js',
+
+			  function ( geometry, materials ) {
+
+			    // Create the mesh from loaded geometry and materials
+			    var material = new THREE.MeshFaceMaterial( materials );
+			    car = new THREE.Mesh( geometry, material );
+
+			    // Can cast shadows
+			    car.castShadow = true;
+
+			    // Add to the scene
+			    scene.add( car );
+			  }
+			)
+
+			// Set size of renderer using window dimensions
+			renderer.setSize(window.innerWidth, window.innerHeight);
+
+			// Append to DOM
+			document.body.appendChild(renderer.domElement);
+
+			// This sets off the render loop
+			render();
+
+		}
+		
+
+		
+
+		io.on('controller_connected', function(connected) {
+
+			if (connected) {
+
+				alert("Connected!");
+
+				var controller_state = {
+				  accelerate: false,
+				  steer: 0
+				},
+				emit_updates = function(){
+				  io.emit('controller_state_change', controller_state);
+				}
+				touchstart = function(e){
+				  e.preventDefault();
+
+				  controller_state.accelerate = true;
+				  emit_updates();
+				},
+				touchend = function(e){
+				  e.preventDefault();
+
+				  controller_state.accelerate = false;
+				  emit_updates();
+				},
+				devicemotion = function(e){
+				  controller_state.steer = e.accelerationIncludingGravity.y / 100;
+
+				  emit_updates();
+				}
+
+				document.body.addEventListener('touchstart', touchstart, false); // iOS & Android
+				document.body.addEventListener('MSPointerDown', touchstart, false); // Windows Phone
+				document.body.addEventListener('touchend', touchend, false); // iOS & Android
+				document.body.addEventListener('MSPointerUp', touchend, false); // Windows Phone
+				window.addEventListener('devicemotion', devicemotion, false);
+
+			} else {
+
+				alert("Not connected!");
+			    controller_state = {};
+			}
+
+		});
+
+		// When the server sends a changed controller state update it in the game
+		io.on('controller_state_change', function(state) {
+
+		  controller_state = state;
+
+		});
+
+	</script>
+</body>
+
+</html>
